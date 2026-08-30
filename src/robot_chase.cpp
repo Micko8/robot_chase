@@ -1,184 +1,72 @@
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
 
 #include "geometry_msgs/msg/transform_stamped.hpp"
-#include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "tf2/exceptions.h"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 
-using namespace std::chrono_literals;
-
-class FrameListener : public rclcpp::Node {
+class RobotChase : public rclcpp::Node {
 public:
-  FrameListener()
-      : Node("turtle_tf2_frame_listener"),
-        turtle_spawning_service_ready_(false), turtle_spawned_(false) {
-
-#if 0
-        self.declare_parameter("world", "default")
-        self.declare_parameter("model_name", "cam_bot")
-        self.declare_parameter("fixed_frame", "odom")          # TF parent frame
-        self.declare_parameter("target_frame", "my_front_turtle_frame")
-        self.declare_parameter("offset_xyz", [0.0, 0.0, 0.0])  # offset in target frame
-        self.declare_parameter("rate_hz", 30.0)
-#endif
-
-    world_ = this->declare_parameter<std::string>("world", "default");
-    model_name_ = this->declare_parameter<std::string>("model_name", "rick");
-    fixed_frame_ = this->declare_parameter<std::string>("fixed_frame", "odom");
+  RobotChase() : Node("robot_chase") {
     target_frame_ =
-        this->declare_parameter<std::string>("target_frame", "morty_base_link");
-    rate_hz_ = this->declare_parameter<float>("rate_hz_", 30.0);
-
-#if 0
-    model_name_ = this->declare_parameter<std::string>("model_name", "rick");
-    fixed_frame_ = this->declare_parameter<std::string>("fixed_frame", "odom");
-    target_frame_ =
-        this->declare_parameter<std::string>("target_frame", "morty_base_link");
-    rate_hz_ = this->declare_parameter<float>("rate_hz_", 30.0);
-#endif
+        this->declare_parameter<std::string>("target_frame", "rick_base_link");
+    source_frame_ =
+        this->declare_parameter<std::string>("source_frame", "morty_base_link");
+    rate_hz_ = this->declare_parameter<double>("rate_hz", 1.0);
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-#if 0
-    // Create a client to spawn a turtle
-    spawner_ = this->create_client<turtlesim::srv::Spawn>("spawn");
-    // Create turtle2 velocity publisher
-    publisher_ =
-        this->create_publisher<geometry_msgs::msg::Twist>("turtle2/cmd_vel", 1);
+    const auto timer_period =
+        std::chrono::duration<double>(1.0 / std::max(rate_hz_, 0.1));
+    timer_ = this->create_wall_timer(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(timer_period),
+        std::bind(&RobotChase::lookup_transform, this));
 
-    // Call on_timer function every second
-    timer_ =
-        this->create_wall_timer(1s, std::bind(&FrameListener::on_timer, this));
-#endif
-
-    // Call on_timer function every second
-    timer_ =
-        this->create_wall_timer(1s, std::bind(&FrameListener::on_timer, this));
+    RCLCPP_INFO(this->get_logger(), "Looking up latest transform: %s -> %s",
+                source_frame_.c_str(), target_frame_.c_str());
   }
 
 private:
-#if 0
-  void on_timer()
-  {
-    // Store frame names in variables that will be used to
-    // compute transformations
-    std::string fromFrameRel = target_frame_.c_str();
-    std::string toFrameRel = "turtle2";
+  void lookup_transform() {
+    geometry_msgs::msg::TransformStamped transform;
 
-    if (turtle_spawning_service_ready_) {
-      if (turtle_spawned_) {
-        geometry_msgs::msg::TransformStamped t;
-
-        // Look up for the transformation between target_frame and turtle2 frames
-        // and send velocity commands for turtle2 to reach target_frame
-        try {
-          t = tf_buffer_->lookupTransform(
-            toFrameRel, fromFrameRel,
-            tf2::TimePointZero);
-        } catch (const tf2::TransformException & ex) {
-          RCLCPP_INFO(
-            this->get_logger(), "Could not transform %s to %s: %s",
-            toFrameRel.c_str(), fromFrameRel.c_str(), ex.what());
-          return;
-        }
-
-        geometry_msgs::msg::Twist msg;
-
-        static const double scaleRotationRate = 1.0;
-        msg.angular.z = scaleRotationRate * atan2(
-          t.transform.translation.y,
-          t.transform.translation.x);
-
-        static const double scaleForwardSpeed = 0.5;
-        msg.linear.x = scaleForwardSpeed * sqrt(
-          pow(t.transform.translation.x, 2) +
-          pow(t.transform.translation.y, 2));
-
-        publisher_->publish(msg);
-      } else {
-        RCLCPP_INFO(this->get_logger(), "Successfully spawned");
-        turtle_spawned_ = true;
-      }
-    } else {
-      // Check if the service is ready
-      if (spawner_->service_is_ready()) {
-        // Initialize request with turtle name and coordinates
-        // Note that x, y and theta are defined as floats in turtlesim/srv/Spawn
-        auto request = std::make_shared<turtlesim::srv::Spawn::Request>();
-        request->x = 4.0;
-        request->y = 2.0;
-        request->theta = 0.0;
-        request->name = "turtle2";
-
-        // Call request
-        using ServiceResponseFuture =
-          rclcpp::Client<turtlesim::srv::Spawn>::SharedFuture;
-        auto response_received_callback = [this](ServiceResponseFuture future) {
-            auto result = future.get();
-            if (strcmp(result->name.c_str(), "turtle2") == 0) {
-              turtle_spawning_service_ready_ = true;
-            } else {
-              RCLCPP_ERROR(this->get_logger(), "Service callback result mismatch");
-            }
-          };
-        auto result = spawner_->async_send_request(request, response_received_callback);
-      } else {
-        RCLCPP_INFO(this->get_logger(), "Service is not ready");
-      }
-    }
-  }
-#endif
-  void on_timer() {
-    // Store frame names in variables that will be used to
-    // compute transformations
-    std::string fromFrameRel = target_frame_.c_str();
-    std::string toFrameRel = "rick_base_link";
-    geometry_msgs::msg::TransformStamped t;
-
-    // Look up for the transformation between target_frame and turtle2 frames
-    // and send velocity commands for turtle2 to reach target_frame
     try {
-      t = tf_buffer_->lookupTransform(toFrameRel, fromFrameRel,
-                                      tf2::TimePointZero);
+      transform = tf_buffer_->lookupTransform(target_frame_, source_frame_,
+                                              tf2::TimePointZero);
     } catch (const tf2::TransformException &ex) {
-      RCLCPP_INFO(this->get_logger(), "Could not transform %s to %s: %s",
-                  toFrameRel.c_str(), fromFrameRel.c_str(), ex.what());
+      RCLCPP_WARN(this->get_logger(), "Could not transform %s to %s: %s",
+                  source_frame_.c_str(), target_frame_.c_str(), ex.what());
       return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "TickTack");
+    const auto &translation = transform.transform.translation;
+    const auto &rotation = transform.transform.rotation;
+
+    RCLCPP_INFO(this->get_logger(),
+                "%s -> %s | translation [x: %.3f, y: %.3f, z: %.3f] | "
+                "rotation [x: %.3f, y: %.3f, z: %.3f, w: %.3f]",
+                source_frame_.c_str(), target_frame_.c_str(), translation.x,
+                translation.y, translation.z, rotation.x, rotation.y,
+                rotation.z, rotation.w);
   }
 
-  // Boolean values to store the information
-  // if the service for spawning turtle is available
-  bool turtle_spawning_service_ready_;
-  // if the turtle was successfully spawned
-  bool turtle_spawned_;
-
-#if 0
-  rclcpp::Client<turtlesim::srv::Spawn>::SharedPtr spawner_{nullptr};
-#endif
-
-  rclcpp::TimerBase::SharedPtr timer_{nullptr};
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_{nullptr};
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+  rclcpp::TimerBase::SharedPtr timer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::string target_frame_;
-  std::string world_;
-  std::string model_name_;
-  std::string fixed_frame_;
-  float rate_hz_;
+  std::string source_frame_;
+  double rate_hz_;
 };
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<FrameListener>());
+  rclcpp::spin(std::make_shared<RobotChase>());
   rclcpp::shutdown();
   return 0;
 }

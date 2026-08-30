@@ -17,9 +17,30 @@ public:
   FrameListener()
       : Node("turtle_tf2_frame_listener"),
         turtle_spawning_service_ready_(false), turtle_spawned_(false) {
-    // Declare and acquire `target_frame` parameter
+
+#if 0
+        self.declare_parameter("world", "default")
+        self.declare_parameter("model_name", "cam_bot")
+        self.declare_parameter("fixed_frame", "odom")          # TF parent frame
+        self.declare_parameter("target_frame", "my_front_turtle_frame")
+        self.declare_parameter("offset_xyz", [0.0, 0.0, 0.0])  # offset in target frame
+        self.declare_parameter("rate_hz", 30.0)
+#endif
+
+    world_ = this->declare_parameter<std::string>("world", "default");
+    model_name_ = this->declare_parameter<std::string>("model_name", "rick");
+    fixed_frame_ = this->declare_parameter<std::string>("fixed_frame", "odom");
     target_frame_ =
-        this->declare_parameter<std::string>("target_frame", "turtle1");
+        this->declare_parameter<std::string>("target_frame", "morty_base_link");
+    rate_hz_ = this->declare_parameter<float>("rate_hz_", 30.0);
+
+#if 0
+    model_name_ = this->declare_parameter<std::string>("model_name", "rick");
+    fixed_frame_ = this->declare_parameter<std::string>("fixed_frame", "odom");
+    target_frame_ =
+        this->declare_parameter<std::string>("target_frame", "morty_base_link");
+    rate_hz_ = this->declare_parameter<float>("rate_hz_", 30.0);
+#endif
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -35,6 +56,10 @@ public:
     timer_ =
         this->create_wall_timer(1s, std::bind(&FrameListener::on_timer, this));
 #endif
+
+    // Call on_timer function every second
+    timer_ =
+        this->create_wall_timer(1s, std::bind(&FrameListener::on_timer, this));
   }
 
 private:
@@ -109,6 +134,26 @@ private:
     }
   }
 #endif
+  void on_timer() {
+    // Store frame names in variables that will be used to
+    // compute transformations
+    std::string fromFrameRel = target_frame_.c_str();
+    std::string toFrameRel = "rick_base_link";
+    geometry_msgs::msg::TransformStamped t;
+
+    // Look up for the transformation between target_frame and turtle2 frames
+    // and send velocity commands for turtle2 to reach target_frame
+    try {
+      t = tf_buffer_->lookupTransform(toFrameRel, fromFrameRel,
+                                      tf2::TimePointZero);
+    } catch (const tf2::TransformException &ex) {
+      RCLCPP_INFO(this->get_logger(), "Could not transform %s to %s: %s",
+                  toFrameRel.c_str(), fromFrameRel.c_str(), ex.what());
+      return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "TickTack");
+  }
 
   // Boolean values to store the information
   // if the service for spawning turtle is available
@@ -125,6 +170,10 @@ private:
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::string target_frame_;
+  std::string world_;
+  std::string model_name_;
+  std::string fixed_frame_;
+  float rate_hz_;
 };
 
 int main(int argc, char *argv[]) {

@@ -37,6 +37,11 @@ ament_target_dependencies(
     tf2_ros
 )
 
+# Copy files to install directory
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
 install(TARGETS  
   robot_chase          
   DESTINATION lib/${PROJECT_NAME})

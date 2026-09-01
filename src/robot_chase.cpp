@@ -22,6 +22,7 @@ public:
     rate_hz_ = this->declare_parameter<double>("rate_hz", 30.0);
     kp_distance_ = this->declare_parameter<double>("kp_distance", 2.0);
     kp_yaw_ = this->declare_parameter<double>("kp_yaw", 2.0);
+    yaw_tolerance_ = this->declare_parameter<double>("yaw_tolerance", 0.2);
     desired_distance_ =
         this->declare_parameter<double>("desired_distance", 0.6);
     max_angular_speed_ =
@@ -64,8 +65,18 @@ private:
     const double error_yaw = std::atan2(translation.y, translation.x);
 
     auto cmd = geometry_msgs::msg::Twist();
-    cmd.linear.x = kp_distance_ * error_distance;
-    cmd.angular.z = kp_yaw_ * error_yaw;
+
+    if (std::abs(error_yaw) < yaw_tolerance_) {
+      cmd.linear.x = kp_distance_ * error_distance;
+    } else {
+      cmd.linear.x = 0.0;
+    }
+
+    if (std::abs(error_yaw) > 0.1) {
+      cmd.angular.z = kp_yaw_ * error_yaw;
+    } else {
+      cmd.angular.z = 0.0;
+    }
 
     publisher_->publish(cmd);
 
@@ -87,6 +98,7 @@ private:
   double kp_yaw_;
   double desired_distance_;
   double max_angular_speed_;
+  double yaw_tolerance_;
 };
 
 int main(int argc, char *argv[]) {
